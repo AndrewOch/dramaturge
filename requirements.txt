@@ -1,0 +1,8 @@
+tokenizers~=0.21.0
+regex~=2024.11.6
+tensorflow~=2.16.2
+numpy~=1.26.4
+
+hors-python-partial
+icecream~=2.1.4
+natasha~=1.6.0

@@ -2,3 +2,8 @@
 .venv
 .idea
 .idea/*
+.DS_Store
+
+preprocess/__pycache__/
+preprocess/regex_processors/__pycache__/
+tokenizer/__pycache__/
