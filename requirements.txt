@@ -6,3 +6,4 @@ numpy~=1.26.4
 hors-python-partial
 icecream~=2.1.4
 natasha~=1.6.0
+pydantic~=2.10.6
