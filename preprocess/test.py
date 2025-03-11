@@ -4,11 +4,14 @@ from preprocess.preprocessor import EventPreprocessor
 from preprocess.regex_processors.literary_prose import LiteraryProseRegexProcessor
 from preprocess.regex_processors.hollywood_script import HollywoodScriptRegexProcessor
 from preprocess.regex_processors.russian_script import RussianScriptRegexProcessor
+from story_elements.database import StoryElementsDatabase
 
 if __name__ == '__main__':
-    preprocessor = EventPreprocessor(regex_processor=LiteraryProseRegexProcessor())
-    preprocessor1 = EventPreprocessor(regex_processor=HollywoodScriptRegexProcessor())
-    preprocessor2 = EventPreprocessor(regex_processor=RussianScriptRegexProcessor())
+    preprocessors = {
+        "Литература": EventPreprocessor(regex_processor=LiteraryProseRegexProcessor()),
+        "Голливуд": EventPreprocessor(regex_processor=HollywoodScriptRegexProcessor()),
+        "Русский сценарий": EventPreprocessor(regex_processor=RussianScriptRegexProcessor())
+    }
 
     texts = [
         "После венчания не было даже легкой закуски; молодые выпили по бокалу, переоделись и поехали на вокзал. Вместо веселого свадебного бала и ужина, вместо музыки и танцев — поездка на богомолье за двести верст. Многие одобрили это, говоря, что Модест Алексеич уже в чинах и не молод, и шумная свадьба могла бы, пожалуй, показаться не совсем приличной; да и скучно слушать музыку, когда чиновник 52 лет женится на девушке, которой едва минуло 18. Говорили также, что эту поездку в монастырь Модест Алексеич, как человек с правилами, затеял, собственно, для того, чтобы дать понять своей молодой жене, что и в браке он отдает первое место религии и нравственности."
@@ -18,21 +21,21 @@ if __name__ == '__main__':
         "— Анюта! Аня! Аня, на одно слово! Подойди завтра"
         , "У меня уже дежурство закончилось."
     ]
+
     d = "=" * 25
-    icecream.ic(f"{d} Литература {d}")
 
-    for text in texts:
-        result = preprocessor.preprocess(text, )
-        icecream.ic(result)
-
-    icecream.ic(f"{d} Голливуд {d}")
-
-    for text in texts:
-        result = preprocessor1.preprocess(text, )
-        icecream.ic(result)
-
-    icecream.ic(f"{d} Русский сценарий {d}")
-
-    for text in texts:
-        result = preprocessor2.preprocess(text, )
-        icecream.ic(result)
+    for key, preprocessor in preprocessors.items():
+        icecream.ic(f"{d} {key} {d}")
+        for text in texts:
+            result = preprocessor.preprocess(text, )
+            icecream.ic(result.model_dump())
+            if "PER" in result.elements:
+                for elem_id in result.elements["PER"].values():
+                    icecream.ic(StoryElementsDatabase().characters.find_by_id(elem_id).model_dump())
+            if "LOC" in result.elements:
+                for elem_id in result.elements["LOC"].values():
+                    icecream.ic(StoryElementsDatabase().locations.find_by_id(elem_id).model_dump())
+            if "ORG" in result.elements:
+                for elem_id in result.elements["ORG"].values():
+                    icecream.ic(StoryElementsDatabase().organizations.find_by_id(elem_id).model_dump())
+            StoryElementsDatabase.reset_instance()

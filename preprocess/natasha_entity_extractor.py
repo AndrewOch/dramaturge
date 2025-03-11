@@ -1,7 +1,8 @@
-# natasha_entity_extractor.py
 from typing import Tuple, List, Dict
+
 from natasha import Segmenter, MorphVocab, NewsEmbedding, NewsNERTagger, Doc
-from preprocess.regex_processor import RegexProcessor  # если нужны общие утилиты
+
+from story_elements.models import StoryElement, StoryElementExtractionOrigin
 
 
 class NatashaEntityExtractor:
@@ -11,7 +12,7 @@ class NatashaEntityExtractor:
         self.emb = NewsEmbedding()
         self.ner_tagger = NewsNERTagger(self.emb)
 
-    def extract(self, text: str, token_counters: Dict[str, int] = None) -> Tuple[str, List[Dict[str, str]]]:
+    def extract(self, text: str, token_counters: Dict[str, int] = None) -> Tuple[str, Dict[str, List[StoryElement]]]:
         if token_counters is None:
             token_counters = {}
         doc = Doc(text)
@@ -19,7 +20,7 @@ class NatashaEntityExtractor:
         doc.tag_ner(self.ner_tagger)
         for span in doc.spans:
             span.normalize(self.morph_vocab)
-        entities = []
+        entities = {}
         # Для согласованной замены сортируем спаны по убыванию позиции, чтобы индексы не смещались.
         spans_sorted = sorted(doc.spans, key=lambda s: s.start, reverse=True)
         for span in spans_sorted:
@@ -28,11 +29,13 @@ class NatashaEntityExtractor:
                 token_counters[etype] = 1
             token = f"<|{etype}_{token_counters[etype]}|>"
             token_counters[etype] += 1
-            entities.append({
-                'text': span.text,
-                'type': etype,
-                'normal': span.normal,
-                'token': token
-            })
+            element = StoryElement(
+                name=span.text,
+                type=etype,
+                extraction_origin=StoryElementExtractionOrigin.NATASHA
+            )
+            if etype not in entities:
+                entities[etype] = []
+            entities[etype].append(element)
             text = text[:span.start] + token + text[span.stop:]
         return text, entities

@@ -1,8 +1,10 @@
-# regex_processor.py
 import re
-from datetime import datetime
 from typing import Tuple, List, Optional, Dict
+
+from hors.models.parser_models import DateTimeToken
 from hors.partial_date.partial_datetime import PartialDateTime
+
+from story_elements.models import StoryElement, StoryElementExtractionOrigin
 
 
 class RegexProcessor:
@@ -21,30 +23,23 @@ class RegexProcessor:
             text = re.sub(pattern, replacement, text)
         return text
 
-    def process_direct_speech(self, text: str) -> Tuple[str, List[Dict[str, str]]]:
-        direct_speech_entries: List[Dict[str, str]] = []
+    def process_direct_speech(self, text: str) -> str:
         for pattern, with_speaker, flags in self.direct_speech_regexes:
             regex = re.compile(pattern, flags)
 
             def repl(match):
                 speaker = match.group("speaker").strip() if with_speaker and match.group("speaker") else "?"
                 quote = match.group("quote").strip()
-                direct_speech_entries.append({"speaker": speaker, "quote": quote})
                 return f"<|QUOTE_ST|>{speaker}<|QUOTE_MID|>{quote}<|QUOTE_END|>"
 
             text = regex.sub(repl, text)
-        return text, direct_speech_entries
+        return text
 
-    def extract_dates(self, text: str, token_counters: Dict[str, int] = None) -> Tuple[str, List[PartialDateTime]]:
-        if token_counters is None:
-            token_counters = {"DATETIME": 1}
-        elif "DATETIME" not in token_counters:
-            token_counters["DATETIME"] = 1
-
+    def extract_dates(self, text: str, token_counter: int = 1) -> Tuple[str, List[DateTimeToken]]:
         dates = []
 
         def repl(match):
-            nonlocal token_counters
+            nonlocal token_counter
             date_str = match.group(0)
             try:
                 # Вместо datetime создаём PartialDateTime
@@ -53,14 +48,15 @@ class RegexProcessor:
                 dates.append(dt)
             except ValueError:
                 return date_str
-            token = f"<|DATETIME_{token_counters['DATETIME']}|>"
-            token_counters["DATETIME"] += 1
+            token = f"<|DATETIME_{token_counter}|>"
+            token_counter += 1
             return token
 
         text = re.sub(self.dates_regex, repl, text)
         return text, dates
 
-    def extract_entities(self, text: str, token_counters: Dict[str, int] = None) -> Tuple[str, List[dict]]:
+    def extract_entities(self, text: str, token_counters: Dict[str, int] = None) \
+            -> Tuple[str, Dict[str, List[StoryElement]]]:
         if token_counters is None:
             token_counters = {}
         # Инициализируем счётчики для каждого типа, если ещё не созданы.
@@ -68,7 +64,7 @@ class RegexProcessor:
             if etype not in token_counters:
                 token_counters[etype] = 1
 
-        all_entities = []
+        entities = {}
         # Сохраняем оригинальный текст для проверки токенов прямой речи.
         original_text = text
 
@@ -81,13 +77,16 @@ class RegexProcessor:
                 if last_quote_st > last_quote_end:
                     return m
                 token = f"<|{etype}_{token_counters[etype]}|>"
-                all_entities.append({
-                    'type': etype,
-                    'value': m,
-                    'token': token
-                })
+                element = StoryElement(
+                    name=m,
+                    type=etype,
+                    extraction_origin=StoryElementExtractionOrigin.REGEX
+                )
+                if etype not in entities:
+                    entities[etype] = []
+                entities[etype].append(element)
                 token_counters[etype] += 1
                 return token
 
             text = re.sub(pattern, repl, text)
-        return text, all_entities
+        return text, entities
