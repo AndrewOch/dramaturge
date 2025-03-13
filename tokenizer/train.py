@@ -6,7 +6,11 @@ from tokenizers.trainers import BpeTrainer
 
 
 def special_tokens():
-    tokens = ["<|UNK|>", "<|QUOTE_ST|>", "<|QUOTE_MID|>", "<|QUOTE_END|>"]
+    tokens = [
+        "<|UNK|>",
+        "<|QUOTE_ST|>", "<|QUOTE_MID|>", "<|QUOTE_END|>",
+        "<|C_GEN|>", "<|C_DAT|>", "<|C_ACC|>", "<|C_INS|>", "<|C_LOC|>", "<|C_VOC|>",
+    ]
     elements_heads = ["PER", "LOC", "ORG", "DATETIME"]
     for element in elements_heads:
         for i in range(10):

@@ -15,12 +15,26 @@ class StoryElementsDatabase:
 
     def __init__(self):
         if not self._initialized:
-            self.characters = CharacterRepository()
-            self.locations = LocationRepository()
-            self.organizations = OrganizationRepository()
+            self.repositories = {
+                'PER': CharacterRepository(),
+                'LOC': LocationRepository(),
+                'ORG': OrganizationRepository()
+            }
             self.datetimes = DatetimeRepository()
-            self._initialized = True  # Чтобы `__init__` не вызывался повторно
+            self._initialized = True
 
     @classmethod
     def reset_instance(cls):
         cls._instance = None
+
+    @property
+    def characters(self):
+        return self.repositories['PER']
+
+    @property
+    def locations(self):
+        return self.repositories['LOC']
+
+    @property
+    def organizations(self):
+        return self.repositories['ORG']

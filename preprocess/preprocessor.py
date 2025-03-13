@@ -6,26 +6,45 @@ import icecream
 from hors.models.parser_models import DateTimeToken
 from hors.partial_date.partial_datetime import PartialDateTime
 
-from preprocess.date_extractor import DateExtractor
 from preprocess.event import StoryEvent
-from preprocess.natasha_entity_extractor import NatashaEntityExtractor
-from preprocess.regex_processor import RegexProcessor
+from preprocess.extractors.date.hors import HorsDateExtractor
+from preprocess.extractors.date.regex import RegexDateExtractor
+from preprocess.extractors.direct_speech.regex import RegexDirectSpeechProcessor
+from preprocess.extractors.entity.regex import RegexEntityExtractor
+from preprocess.regex_templates.template import RegexTemplate
+from preprocess.utils.morph import MorphProcessor
+from preprocess.extractors.entity.natasha import NatashaEntityExtractor
+
+from preprocess.utils.regex_cleanup import RegexCleanupProcessor
+from preprocess.utils.syntax import SyntaxProcessor
 from story_elements.database import StoryElementsDatabase
-from story_elements.models import StoryElement, StoryElementExtractionOrigin
+from story_elements.models import StoryElement
 
 
 class EventPreprocessor:
-    def __init__(self, regex_processor: RegexProcessor = RegexProcessor()):
-        self.regex_processor = regex_processor
-        self.date_extractor = DateExtractor()
+    def __init__(self, regex_template: RegexTemplate = RegexTemplate()):
+        self.cleanup = RegexCleanupProcessor(regex_template.cleanup_regexes)
+        self.morph = MorphProcessor()
+        self.syntax = SyntaxProcessor()
+
+        self.date_extractor = HorsDateExtractor()
+        self.regex_date_extractor = RegexDateExtractor(regex_template.dates_regex)
+
         self.entity_extractor = NatashaEntityExtractor()
+        self.regex_entity_extractor = RegexEntityExtractor(regex_template.entities_regexes)
+
+        self.direct_speech = RegexDirectSpeechProcessor(regex_template.direct_speech_regexes)
 
     def preprocess(self, text: str, index=0, now: Optional[PartialDateTime] = None) -> StoryEvent:
         source_text = text
-        text = self._base_preprocess(text)
+        text = self._cleanup(text)
+        morph_markups = self.morph.process(text)
+        syntax_markups = self.syntax.process(text)
+        icecream.ic(morph_markups)
+        icecream.ic(syntax_markups)
         text, dates = self._process_dates(text, now)
-        text, entities = self._process_entities(text)
-        text = self.regex_processor.process_direct_speech(text)
+        text, entities = self._process_entities(text, morph_markups, syntax_markups)
+        text = self.direct_speech.process(text)
 
         event = StoryEvent(
             index=index,
@@ -36,25 +55,26 @@ class EventPreprocessor:
         )
         return event
 
-    def _base_preprocess(self, text: str) -> str:
-        text = self.regex_processor.apply_base_preprocess(text)
+    def _cleanup(self, text: str) -> str:
+        text = self.cleanup.cleanup(text)
         return text.strip()
 
     def _process_dates(self, text: str, now: Optional[DateTimeToken]) -> Tuple[str, List]:
         dates = []
         token_counter = 1
-        text, dates_res = self.regex_processor.extract_dates(text, token_counter)
+        text, dates_res = self.regex_date_extractor.extract(text, token_counter)
         dates.extend(dates_res)
         text, dates_res = self.date_extractor.extract(text, now, token_counter)
         dates.extend(dates_res)
         return text, dates
 
-    def _process_entities(self, text: str) -> Tuple[str, Dict[str, Dict[int, uuid.UUID]]]:
+    def _process_entities(self, text: str, morph_markups, syntax_markups) -> Tuple[
+        str, Dict[str, Dict[int, uuid.UUID]]]:
 
         entities_dict: Dict[str, List[StoryElement]] = {}
         token_counters = {}
 
-        text, entities_res = self.regex_processor.extract_entities(text, token_counters)
+        text, entities_res = self.regex_entity_extractor.extract(text, morph_markups, syntax_markups, token_counters)
         for key, elements in entities_res.items():
             entities_dict.setdefault(key, []).extend(elements)
 
@@ -96,7 +116,7 @@ class EventPreprocessor:
 
             for t_type in combined_tokens:
                 for idx, existing in combined_tokens[t_type].items():
-                    if existing.name == word:
+                    if word in existing.name.split(' '):
                         return f"<|{t_type}_{idx}|>"
 
             found_element = None
@@ -126,11 +146,7 @@ class EventPreprocessor:
         global_final_id_to_index = {'PER': {}, 'LOC': {}, 'ORG': {}}
         combined_mapping = {}
         for t_type in ['PER', 'LOC', 'ORG']:
-            repo = {
-                'PER': story_database.characters,
-                'LOC': story_database.locations,
-                'ORG': story_database.organizations
-            }[t_type]
+            repo = story_database.repositories[t_type]
             mapping_for_type = combined_tokens[t_type]
             if mapping_for_type:
                 new_indexes, id_mapped = repo.add_elements(mapping_for_type)

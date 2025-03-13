@@ -7,3 +7,6 @@ hors-python-partial
 icecream~=2.1.4
 natasha~=1.6.0
 pydantic~=2.10.6
+razdel~=0.5.0
+navec~=0.10.0
+slovnet~=0.6.0
