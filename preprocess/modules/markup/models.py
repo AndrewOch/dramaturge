@@ -1,6 +1,14 @@
+from enum import Enum, auto
 from typing import List
 
 from slovnet.markup import MorphToken, SyntaxToken
+
+
+class EventType(Enum):
+    UNKNOWN = auto()
+    STATIC = auto()
+    DYNAMIC = auto()
+    MIXED = auto()
 
 
 class EventToken:
@@ -17,36 +25,34 @@ class EventToken:
         self.feats = morph.feats
 
     def __repr__(self) -> str:
-        # подробное представление для отладки
         return (
             f"EventToken(id={self.id}, head_id={self.head_id}, rel='{self.rel}', "
             f"text='{self.text}', pos='{self.pos}', feats={self.feats})"
         )
 
     def __str__(self) -> str:
-        # краткое «человеческое» представление — просто текст токена
         return self.text
 
 
 class EventMarkup:
-    __attributes__ = ['tokens']
+    __attributes__ = ['type', 'tokens']
     __annotations__ = {
+        'type': EventType,
         'tokens': List[EventToken]
     }
 
-    def __init__(self, tokens: List[EventToken]):
+    def __init__(self, tokens: List[EventToken], event_type: EventType = EventType.UNKNOWN):
+        self.type = event_type
         self.tokens = tokens
 
     def __repr__(self) -> str:
-        # подробный repr: покажем список токенов
-        return f"EventMarkup(tokens=[{', '.join(repr(t) for t in self.tokens)}])"
+        return f"EventMarkup(type={self.type} tokens=[{', '.join(repr(t) for t in self.tokens)}])"
 
     def __str__(self) -> str:
         # вернёт саму фразу, восстановленную из токенов
         parts: List[str] = []
         for tok in self.tokens:
             if parts and tok.text in {'.', ',', '!', '?', ';', ':'}:
-                # «прилипшая» пунктуация
                 parts[-1] += tok.text
             else:
                 parts.append(tok.text)

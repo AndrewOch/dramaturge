@@ -1,12 +1,10 @@
 from typing import List, Tuple
 
-import icecream
-
 from preprocess.modules.markup.pipeline import EventMarkup, EventToken
 
 
 class SentenceRearrangePipeline:
-    # приоритеты рёбер (rel): меньший приоритет – раньше в предложении
+    # приоритеты рёбер (rel): меньший — раньше в предложении
     REL_PRIORITY = {
         'root': 0,
         'nsubj': 1,
@@ -28,53 +26,89 @@ class SentenceRearrangePipeline:
 
         for em in event_markups:
             tokens = em.tokens
+            before_count = len(tokens)
 
+            # 1) разорвать самоссылки
+            for tok in tokens:
+                if tok.head_id == tok.id:
+                    tok.head_id = 0
+
+            # 2) разорвать циклы (поиск по head_id)
+            by_id = {tok.id: tok for tok in tokens}
+            for tok in tokens:
+                visited = []
+                cur = tok
+                while True:
+                    h = cur.head_id
+                    if h == 0 or h not in by_id:
+                        break
+                    if h in visited:
+                        # нашли цикл → разорвать только самую «малую» по id вершину цикла
+                        cycle = visited[visited.index(h):] + [h]
+                        root_id = min(cycle)
+                        by_id[root_id].head_id = 0
+                        break
+                    visited.append(h)
+                    cur = by_id[h]
+
+            # 3) строим children
             children: dict[int, List[EventToken]] = {}
             for tok in tokens:
                 children.setdefault(tok.head_id, []).append(tok)
 
-            existing_ids = {tok.id for tok in tokens}
-            roots = [tok for tok in tokens if tok.head_id not in existing_ids]
+            # 4) собираем корни
+            existing = {tok.id for tok in tokens}
+            roots = [tok for tok in tokens if tok.head_id == 0]
+            if not roots:
+                roots = [tok for tok in tokens if tok.head_id not in existing]
             if not roots:
                 roots = [min(tokens, key=lambda t: t.id)]
 
-            def traverse(node: EventToken) -> List[EventToken]:
-                ordered = [node]
+            # вспомогательная функция обхода с visited
+            def traverse(node: EventToken, visited: set[int]) -> List[EventToken]:
+                if node.id in visited:
+                    return []
+                visited.add(node.id)
+                seq = [node]
                 kids = children.get(node.id, [])
                 max_pr = max(self.REL_PRIORITY.values()) + 1
+                # сортируем детей по rel, потом id
                 kids_sorted = sorted(
                     kids,
-                    key=lambda t: (
-                        self.REL_PRIORITY.get(t.rel, max_pr),
-                        t.id
-                    )
+                    key=lambda t: (self.REL_PRIORITY.get(t.rel, max_pr), t.id)
                 )
-                for child in kids_sorted:
-                    ordered.extend(traverse(child))
-                return ordered
+                for ch in kids_sorted:
+                    seq.extend(traverse(ch, visited))
+                return seq
 
+            # 5) обходим все ветки по порядку
             max_pr = max(self.REL_PRIORITY.values()) + 1
             roots_sorted = sorted(
                 roots,
-                key=lambda t: (
-                    self.REL_PRIORITY.get(t.rel, max_pr),
-                    t.id
-                )
+                key=lambda t: (self.REL_PRIORITY.get(t.rel, max_pr), t.id)
             )
-            ordered_tokens: List[EventToken] = []
-            for root in roots_sorted:
-                ordered_tokens.extend(traverse(root))
+            visited_ids = set()
+            ordered = []
+            # сначала по корням
+            for r in roots_sorted:
+                ordered.extend(traverse(r, visited_ids))
+            # потом «висящие» остатки
+            for tok in tokens:
+                if tok.id not in visited_ids:
+                    ordered.extend(traverse(tok, visited_ids))
 
-            old_to_new = {old.id: new_id
-                          for new_id, old in enumerate(ordered_tokens, start=1)}
-            for new_id, tok in enumerate(ordered_tokens, start=1):
-                old_head = tok.head_id
+            # 6) перенумерация
+            old2new = {old.id: i for i, old in enumerate(ordered, start=1)}
+            for new_id, tok in enumerate(ordered, start=1):
+                old_h = tok.head_id
                 tok.id = new_id
-                tok.head_id = old_to_new.get(old_head, 0)
+                tok.head_id = old2new.get(old_h, 0)
 
-            em.tokens = ordered_tokens
+            em.tokens = ordered
+            # контроль целостности
+            assert len(em.tokens) == before_count, f"Token count mismatch: {before_count} → {len(em.tokens)}"
+
             new_sentences.append(str(em))
 
-        new_text = "\n".join(new_sentences)
-        icecream.ic(event_markups)
-        return new_text, event_markups
+        text = "\n".join(new_sentences)
+        return text, event_markups

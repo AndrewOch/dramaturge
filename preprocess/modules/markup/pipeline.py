@@ -3,19 +3,24 @@ from typing import List
 from slovnet.markup import MorphMarkup, SyntaxMarkup
 
 from preprocess.modules.markup.models import EventMarkup, EventToken
-from preprocess.modules.markup.morph import MorphProcessor
-from preprocess.modules.markup.syntax import SyntaxProcessor
+from preprocess.modules.markup.processors.event_type import EventTypeClassifier
+from preprocess.modules.markup.processors.morph import MorphProcessor
+from preprocess.modules.markup.processors.syntax import SyntaxProcessor
 
 
 class MarkupPipeline:
     def __init__(self):
         self.morph = MorphProcessor()
         self.syntax = SyntaxProcessor()
+        self.type_classifier = EventTypeClassifier()
 
     def process(self, text) -> List[EventMarkup]:
         morph_markups = self.morph.process(text)
         syntax_markups = self.syntax.process(text)
-        return self._merge(morph_markups, syntax_markups)
+        markups = self._merge(morph_markups, syntax_markups)
+        for markup in markups:
+            markup.type = self.type_classifier.classify(markup)
+        return markups
 
     def _merge(
             self,

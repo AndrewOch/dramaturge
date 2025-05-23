@@ -1,6 +1,7 @@
 from typing import Optional
 
 from hors.partial_date.partial_datetime import PartialDateTime
+from icecream import icecream
 
 from preprocess.event import StoryEvent
 from preprocess.modules.cleanup.pipeline import CleanupPipeline
@@ -32,10 +33,12 @@ class EventPreprocessor:
         markups = self.markup.process(text)
         text, dates = self.dates.process(text, markups, now)
         text, entities = self.entities.process(text, markups)
+        icecream.ic('before rear', markups)
         text, markups = self.rearrange.rearrange(markups)
+        icecream.ic('after rear', markups)
         text = self.direct_speech.process(text)
-        text = self.special_tokens.replace_with_special_tokens(text)
 
+        text = self.special_tokens.replace_with_special_tokens(text)
         event = StoryEvent(
             index=index,
             source_text=source_text,
