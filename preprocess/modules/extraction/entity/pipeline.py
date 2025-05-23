@@ -8,9 +8,10 @@ from story_elements.models import StoryElement
 
 
 class EntityExtractionPipeline:
-    def __init__(self, regexes: Dict[str, str]):
+    def __init__(self, elems_database, regexes: Dict[str, str]):
         self.natasha_extractor = NatashaEntityExtractor()
         self.regex_extractor = RegexEntityExtractor(regexes)
+        self.elems_database = elems_database
 
     def process(self, text: str, markups) -> Tuple[
         str, Dict[str, Dict[int, uuid.UUID]]]:

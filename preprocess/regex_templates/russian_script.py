@@ -30,4 +30,4 @@ class RussianScriptTemplate(RegexTemplate):
             (r'\s*,\s*', ', '),
         ]
 
-        self.load_stopwords_from_csv('./resources/stopwords.csv', index=2)
+        self.load_stopwords_from_csv('./regex_templates/resources/stopwords.csv', index=2)
