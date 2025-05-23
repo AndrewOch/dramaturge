@@ -1,27 +1,33 @@
 import re
+from typing import List, Tuple, Dict
 
 from preprocess.regex_templates.template import RegexTemplate
 
 
 class LiteraryProseTemplate(RegexTemplate):
-    base_preprocess_regexes = [
-        (r'\s+', ' '),  # Замена множества пробелов на один.
-        (r'-{2,}', '—'),  # Замена последовательностей дефисов на тире.
-    ]
-    dates_regex = r'(\d{2}\.\d{2}\.\d{4})'
-    # Теперь имя персонажа должно состоять минимум из 3 букв, и мы защищаем спецтокены
-    entities_regexes = {
+    dates_regex: str = r'(\d{2}\.\d{2}\.\d{4})'
+    entities_regexes: Dict[str, str] = {
         'PER': r'(?<!<\|)\b[А-ЯЁ][а-яё]{2,}(?:\s+[А-ЯЁ][а-яё]{2,})?\b(?!\|>)'
     }
-    # Паттерны для прямой речи:
-    direct_speech_regexes = [
-        # Формат: "Алекс: "Привет."" или «Привет.» с явным указанием говорящего через двоеточие или тире
+    direct_speech_regexes: List[Tuple[str, bool, int]] = [
+
         (r'(?P<speaker>[А-ЯЁ][а-яё]{2,}(?:\s+[А-ЯЁ][а-яё]{2,})*)\s*[:\-]\s*[«"“](?P<quote>.+?)[»"”]', True, 0),
-        # Формат: "Алекс: Привет." без кавычек (конец цитаты определяется точкой или переводом строки)
+
         (r'(?P<speaker>[А-ЯЁ][а-яё]{2,}(?:\s+[А-ЯЁ][а-яё]{2,})*)\s*[:\-]\s*(?P<quote>.+?)(?=[\.\n])', True, 0),
-        # Формат: "- Привет." — цитата, начинающаяся с тире, без указания говорящего
+
         (r'^[\-\–\—]\s*(?P<quote>.+)$', False, re.M),
-        # Формат: Прямая речь в кавычках без указания говорящего.
-        # Отрицательные проверки не обрабатывают уже вставленные токены.
+
         (r'(?<!<\|)[«"“](?P<quote>.+?)[»"”](?!\|>)', False, 0),
     ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.cleanup_regexes = [
+            (r'\s+', ' '),
+            (r'-{2,}', '—'),
+            (r',\s*,', ','),
+            (r'\s*,\s*', ', '),
+        ]
+
+        self.load_stopwords_from_csv('./resources/stopwords.csv', index=2)

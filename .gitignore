@@ -1,9 +1,8 @@
 /data/
+/data_preprocessed/
 .venv
 .idea
 .idea/*
 .DS_Store
 
-preprocess/__pycache__/
-preprocess/regex_templates/__pycache__/
-tokenizer/__pycache__/
+**/__pycache__/
