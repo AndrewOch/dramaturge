@@ -46,7 +46,8 @@ class EventMarkup:
         self.tokens = tokens
 
     def __repr__(self) -> str:
-        return f"EventMarkup(type={self.type} tokens=[{', '.join(repr(t) for t in self.tokens)}])"
+        return (f"EventMarkup(text={self.__str__()}\n"
+                f"type={self.type} tokens=[{', '.join(repr(t) for t in self.tokens)}])")
 
     def __str__(self) -> str:
         # вернёт саму фразу, восстановленную из токенов

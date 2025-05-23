@@ -2,8 +2,11 @@ import re
 import uuid
 from typing import Dict, Tuple, List
 
+from slovnet.markup import MorphToken, SyntaxToken
+
 from preprocess.modules.extraction.entity.extractors.natasha import NatashaEntityExtractor
 from preprocess.modules.extraction.entity.extractors.regex import RegexEntityExtractor
+from preprocess.modules.markup.models import EventMarkup, EventToken
 from story_elements.models import StoryElement
 
 
@@ -13,7 +16,7 @@ class EntityExtractionPipeline:
         self.regex_extractor = RegexEntityExtractor(regexes)
         self.elems_database = elems_database
 
-    def process(self, text: str, markups) -> Tuple[
+    def process(self, text: str, markups: List[EventMarkup]) -> Tuple[
         str, Dict[str, Dict[int, uuid.UUID]]]:
 
         entities_dict: Dict[str, List[StoryElement]] = {}
@@ -33,8 +36,9 @@ class EntityExtractionPipeline:
 
         combined_mapping, global_final_id_to_index = self._build_combined_mapping(combined_tokens)
         text = self._update_tokens(text, combined_mapping)
-
         text = self._merge_adjacent_tokens(text)
+
+        self._update_markups(text, markups, combined_tokens, combined_mapping)
 
         final_index_mapping = self._build_final_index_mapping(global_final_id_to_index)
         event_elements = self._build_event_elements(text, final_index_mapping)
@@ -44,99 +48,126 @@ class EntityExtractionPipeline:
     def _build_combined_tokens(self, entities_dict: Dict[str, List[StoryElement]]
                                ) -> Dict[str, Dict[int, StoryElement]]:
         combined_tokens = {'PER': {}, 'LOC': {}, 'ORG': {}}
-        for t_type in ['PER', 'LOC', 'ORG']:
-            for i, element in enumerate(entities_dict.get(t_type, []), start=1):
-                combined_tokens[t_type][i] = element
+        for t_type in combined_tokens:
+            for idx, elem in enumerate(entities_dict.get(t_type, []), 1):
+                combined_tokens[t_type][idx] = elem
         return combined_tokens
 
     def _apply_entity_replacement(self, text: str,
                                   combined_tokens: Dict[str, Dict[int, StoryElement]]) -> str:
+
         def replace_word(match: re.Match) -> str:
             word = match.group(0)
             if not word[0].isupper() or len(word) <= 2:
                 return word
 
-            for t_type in combined_tokens:
-                for idx, existing in combined_tokens[t_type].items():
-                    if word in existing.name.split(' '):
+            for t_type, tokens in combined_tokens.items():
+                for idx, elem in tokens.items():
+                    if word in elem.name.split():
                         return f"<|{t_type}_{idx}|>"
 
-            found_element = None
-            token_type = None
-            for repo, t_type in [(self.elems_database.characters, 'PER'),
-                                 (self.elems_database.locations, 'LOC'),
-                                 (self.elems_database.organizations, 'ORG')]:
-                element = repo.find_by_text(word)
-                if element is not None:
-                    found_element = element
-                    token_type = t_type
-                    break
-            if found_element is not None:
-                for idx, existing in combined_tokens[token_type].items():
-                    if existing.name == found_element.name:
-                        return f"<|{token_type}_{idx}|>"
-                new_index = len(combined_tokens[token_type]) + 1
-                combined_tokens[token_type][new_index] = found_element
-                return f"<|{token_type}_{new_index}|>"
             return word
 
         return re.sub(r'(?<!<\|)\b\w+\b(?!\|>)', replace_word, text)
 
-    def _build_combined_mapping(self, combined_tokens: Dict[str, Dict[int, StoryElement]]) -> Tuple[
-        Dict[Tuple[str, int], int], Dict[str, Dict[uuid.UUID, int]]]:
-        global_final_id_to_index = {'PER': {}, 'LOC': {}, 'ORG': {}}
-        combined_mapping = {}
-        for t_type in ['PER', 'LOC', 'ORG']:
-            repo = self.elems_database.repositories[t_type]
-            mapping_for_type = combined_tokens[t_type]
-            if mapping_for_type:
-                new_indexes, id_mapped = repo.add_elements(mapping_for_type)
-                for final_idx, story_elem_id in id_mapped.items():
-                    global_final_id_to_index[t_type][story_elem_id] = final_idx
-                for temp_idx, final_index in zip(sorted(mapping_for_type.keys()), new_indexes):
-                    combined_mapping[(t_type, temp_idx)] = final_index
-        return combined_mapping, global_final_id_to_index
-
     def _update_tokens(self, text: str, combined_mapping: Dict[Tuple[str, int], int]) -> str:
-        def update_token(match: re.Match) -> str:
-            token_full = match.group(0)
-            m = re.match(r'<\|(\w+)_(\d+)\|>', token_full)
-            if m:
-                t_type = m.group(1)
-                temp_idx = int(m.group(2))
-                final_index = combined_mapping.get((t_type, temp_idx), temp_idx)
-                return f"<|{t_type}_{final_index}|>"
-            return token_full
+        def repl(m: re.Match) -> str:
+            t, i = m.group(1), int(m.group(2))
+            final = combined_mapping.get((t, i), i)
+            return f"<|{t}_{final}|>"
 
-        return re.sub(r'<\|\w+_\d+\|>', update_token, text)
+        return re.sub(r'<\|(\w+)_(\d+)\|>', repl, text)
 
     def _merge_adjacent_tokens(self, text: str) -> str:
-        def merge_adjacent(match: re.Match) -> str:
-            group = match.group(0)
-            tokens = re.findall(r'<\|\w+_\d+\|>', group)
-            if len(set(tokens)) == 1:
-                return tokens[0]
-            return group
+        return re.sub(r'((?:<\|\w+_\d+\|>\s+){1,}<\|\w+_\d+\|>)',
+                      lambda m: re.findall(r'<\|\w+_\d+\|>', m.group(0))[0],
+                      text)
 
-        return re.sub(r'((?:<\|\w+_\d+\|>\s+){1,}<\|\w+_\d+\|>)', merge_adjacent, text)
+    def _build_combined_mapping(self, combined_tokens: Dict[str, Dict[int, StoryElement]]) -> Tuple[
+        Dict[Tuple[str, int], int], Dict[str, Dict[uuid.UUID, int]]]:
+        global_ids = {'PER': {}, 'LOC': {}, 'ORG': {}}
+        mapping: Dict[Tuple[str, int], int] = {}
+        for t_type, temp_map in combined_tokens.items():
+            repo = self.elems_database.repositories[t_type]
+            if temp_map:
+                new_idxs, id_map = repo.add_elements(temp_map)
+                for final_idx, eid in id_map.items():
+                    global_ids[t_type][eid] = final_idx
+                for temp_idx, final_idx in zip(sorted(temp_map), new_idxs):
+                    mapping[(t_type, temp_idx)] = final_idx
+        return mapping, global_ids
 
     def _build_final_index_mapping(self, global_final_id_to_index: Dict[str, Dict[uuid.UUID, int]]
                                    ) -> Dict[Tuple[str, int], uuid.UUID]:
-        final_index_mapping = {}
-        for t_type in ['PER', 'LOC', 'ORG']:
-            for story_elem_id, final_idx in global_final_id_to_index[t_type].items():
-                final_index_mapping[(t_type, final_idx)] = story_elem_id
-        return final_index_mapping
+        final: Dict[Tuple[str, int], uuid.UUID] = {}
+        for t_type, id_map in global_final_id_to_index.items():
+            for eid, idx in id_map.items():
+                final[(t_type, idx)] = eid
+        return final
 
     def _build_event_elements(self, text: str,
                               final_index_mapping: Dict[Tuple[str, int], uuid.UUID]
                               ) -> Dict[str, Dict[int, uuid.UUID]]:
-        event_elements: Dict[str, Dict[int, uuid.UUID]] = {}
-        tokens_in_text = re.findall(r'<\|(\w+)_(\d+)\|>', text)
-        for t_type, idx_str in tokens_in_text:
-            final_idx = int(idx_str)
-            elem_id = final_index_mapping.get((t_type, final_idx))
-            if elem_id is None:
-                continue
-            event_elements.setdefault(t_type, {})[final_idx] = elem_id
-        return event_elements
+        elems: Dict[str, Dict[int, uuid.UUID]] = {}
+        for t, i in re.findall(r'<\|(\w+)_(\d+)\|>', text):
+            idx = int(i)
+            eid = final_index_mapping.get((t, idx))
+            if eid:
+                elems.setdefault(t, {})[idx] = eid
+        return elems
+
+    def _update_markups(self, text, markups, combined_tokens, combined_mapping):
+        # Построим словарь: фраза сущности -> финальный спецтокен
+        phrase_to_token = {}
+        for t_type, temp_map in combined_tokens.items():
+            for temp_idx, elem in temp_map.items():
+                final_idx = combined_mapping.get((t_type, temp_idx), temp_idx)
+                token = f"<|{t_type}_{final_idx}|>"
+                phrase_to_token[elem.name] = token
+
+        # Обрабатываем каждую маркировку
+        for markup in markups:
+            tokens = markup.tokens
+            new_tokens = []
+            original_ids_list = []
+            i = 0
+            while i < len(tokens):
+                # Ищем самую длинную последовательность, которая соответствует сущности
+                for k in range(len(tokens) - i, 0, -1):
+                    phrase = ' '.join(t.text for t in tokens[i:i + k])
+                    if phrase in phrase_to_token:
+                        token = phrase_to_token[phrase]
+                        # Находим головной токен: его head_id не в последовательности
+                        seq_ids = {t.id for t in tokens[i:i + k]}
+                        head_token = next(t for t in tokens[i:i + k] if t.head_id not in seq_ids)
+                        # Создаем новый токен с текстом спецтокена и метками от головного токена
+                        new_morph = MorphToken(text=token, pos=head_token.pos, feats=head_token.feats)
+                        new_syntax = SyntaxToken(id=0, head_id=head_token.head_id, rel=head_token.rel, text=token)
+                        new_token = EventToken(new_morph, new_syntax)
+                        new_tokens.append(new_token)
+                        original_ids_list.append([t.id for t in tokens[i:i + k]])
+                        i += k
+                        break
+                else:
+                    # Нет совпадения, добавляем оригинальный токен
+                    new_tokens.append(tokens[i])
+                    original_ids_list.append([tokens[i].id])
+                    i += 1
+
+            # Перенумеровываем id
+            for idx, new_token in enumerate(new_tokens):
+                new_token.id = idx + 1
+
+            # Создаем отображение старых id на новые
+            original_to_new = {}
+            for new_id, orig_ids in enumerate(original_ids_list, 1):
+                for orig_id in orig_ids:
+                    original_to_new[orig_id] = new_id
+
+            # Обновляем head_id
+            for new_token in new_tokens:
+                if new_token.head_id != 0:
+                    new_token.head_id = original_to_new.get(new_token.head_id, 0)
+
+            # Обновляем токены в маркировке
+            markup.tokens = new_tokens
