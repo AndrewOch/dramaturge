@@ -1,6 +1,7 @@
-from typing import List, Tuple
+from typing import List
 
-from preprocess.modules.markup.pipeline import EventMarkup, EventToken
+from preprocess.modules.markup.models import EventMarkupBlock
+from preprocess.modules.markup.pipeline import EventToken
 
 
 class SentenceRearrangePipeline:
@@ -21,10 +22,9 @@ class SentenceRearrangePipeline:
         'punct': 12,
     }
 
-    def rearrange(self, event_markups: List[EventMarkup]) -> Tuple[str, List[EventMarkup]]:
-        new_sentences = []
+    def rearrange(self, block: EventMarkupBlock) -> EventMarkupBlock:
 
-        for em in event_markups:
+        for em in block:
             tokens = em.tokens
             before_count = len(tokens)
 
@@ -108,7 +108,4 @@ class SentenceRearrangePipeline:
             # контроль целостности
             assert len(em.tokens) == before_count, f"Token count mismatch: {before_count} → {len(em.tokens)}"
 
-            new_sentences.append(str(em))
-
-        text = "\n".join(new_sentences)
-        return text, event_markups
+        return block

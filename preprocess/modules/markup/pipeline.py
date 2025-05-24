@@ -2,7 +2,7 @@ from typing import List
 
 from slovnet.markup import MorphMarkup, SyntaxMarkup
 
-from preprocess.modules.markup.models import EventMarkup, EventToken
+from preprocess.modules.markup.models import EventMarkup, EventToken, EventMarkupBlock
 from preprocess.modules.markup.processors.event_type import EventTypeClassifier
 from preprocess.modules.markup.processors.morph import MorphProcessor
 from preprocess.modules.markup.processors.syntax import SyntaxProcessor
@@ -14,13 +14,23 @@ class MarkupPipeline:
         self.syntax = SyntaxProcessor()
         self.type_classifier = EventTypeClassifier()
 
-    def process(self, text) -> List[EventMarkup]:
-        morph_markups = self.morph.process(text)
-        syntax_markups = self.syntax.process(text)
-        markups = self._merge(morph_markups, syntax_markups)
-        for markup in markups:
-            markup.type = self.type_classifier.classify(markup)
-        return markups
+    def process(self, text: str) -> EventMarkupBlock:
+        morph_markups: List[MorphMarkup] = self.morph.process(text)
+        syntax_markups: List[SyntaxMarkup] = self.syntax.process(text)
+
+        if len(morph_markups) != len(syntax_markups):
+            raise ValueError(f"...")
+
+        markups: List[EventMarkup] = []
+        for m_mkp, s_mkp in zip(morph_markups, syntax_markups):
+            if len(m_mkp.tokens) != len(s_mkp.tokens):
+                raise ValueError(f"...")
+            tokens = [EventToken(m, s) for m, s in zip(m_mkp.tokens, s_mkp.tokens)]
+            em = EventMarkup(tokens)
+            em.type = self.type_classifier.classify(em)
+            markups.append(em)
+
+        return EventMarkupBlock(markups)
 
     def _merge(
             self,

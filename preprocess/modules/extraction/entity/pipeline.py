@@ -6,7 +6,7 @@ from slovnet.markup import MorphToken, SyntaxToken
 
 from preprocess.modules.extraction.entity.extractors.natasha import NatashaEntityExtractor
 from preprocess.modules.extraction.entity.extractors.regex import RegexEntityExtractor
-from preprocess.modules.markup.models import EventMarkup, EventToken
+from preprocess.modules.markup.models import EventMarkup, EventToken, EventMarkupBlock
 from story_elements.models import StoryElement
 
 
@@ -16,34 +16,41 @@ class EntityExtractionPipeline:
         self.regex_extractor = RegexEntityExtractor(regexes)
         self.elems_database = elems_database
 
-    def process(self, text: str, markups: List[EventMarkup]) -> Tuple[
-        str, Dict[str, Dict[int, uuid.UUID]]]:
-
+    def process(
+            self,
+            block: EventMarkupBlock
+    ) -> Tuple[EventMarkupBlock, Dict[str, Dict[int, uuid.UUID]]]:
+        # 1. собрали текст
+        text = str(block)
+        markups = block.markups
+        token_counters: Dict[str, int] = {}
         entities_dict: Dict[str, List[StoryElement]] = {}
-        token_counters = {}
 
-        text, entities_res = self.regex_extractor.extract(text, markups, token_counters)
-        for key, elements in entities_res.items():
-            entities_dict.setdefault(key, []).extend(elements)
+        # 2. regex-экстрактор
+        text, res = self.regex_extractor.extract(text, markups, token_counters)
+        for k, lst in res.items():
+            entities_dict.setdefault(k, []).extend(lst)
 
-        text, entities_res = self.natasha_extractor.extract(text, token_counters)
-        for key, elements in entities_res.items():
-            entities_dict.setdefault(key, []).extend(elements)
+        # 3. Natasha
+        text, res = self.natasha_extractor.extract(text, token_counters)
+        for k, lst in res.items():
+            entities_dict.setdefault(k, []).extend(lst)
 
-        combined_tokens = self._build_combined_tokens(entities_dict)
-
-        text = self._apply_entity_replacement(text, combined_tokens)
-
-        combined_mapping, global_final_id_to_index = self._build_combined_mapping(combined_tokens)
-        text = self._update_tokens(text, combined_mapping)
+        # 4. сбор и замена в тексте
+        combined = self._build_combined_tokens(entities_dict)
+        text = self._apply_entity_replacement(text, combined)
+        mapping, global_ids = self._build_combined_mapping(combined)
+        text = self._update_tokens(text, mapping)
         text = self._merge_adjacent_tokens(text)
 
-        self._update_markups(text, markups, combined_tokens, combined_mapping)
+        # 5. обновляем разметку внутри блока
+        self._update_markups(text, markups, combined, mapping)
 
-        final_index_mapping = self._build_final_index_mapping(global_final_id_to_index)
-        event_elements = self._build_event_elements(text, final_index_mapping)
+        # 6. собираем элементы и отдаем
+        final_map = self._build_final_index_mapping(global_ids)
+        event_elements = self._build_event_elements(text, final_map)
 
-        return text, event_elements
+        return block, event_elements
 
     def _build_combined_tokens(self, entities_dict: Dict[str, List[StoryElement]]
                                ) -> Dict[str, Dict[int, StoryElement]]:

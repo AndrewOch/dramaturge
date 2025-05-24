@@ -11,10 +11,12 @@ class StoryEvent(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     index: int
     source_text: str
-    text: str
     markups: List[EventMarkup] = Field(default_factory=list, exclude=True)
     dates: List[DateTimeToken]
     elements: Dict[str, Dict[int, uuid.UUID]]
 
     class Config:
         arbitrary_types_allowed = True
+
+    def text(self):
+        return str(self.block)

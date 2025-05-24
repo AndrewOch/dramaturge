@@ -58,3 +58,29 @@ class EventMarkup:
             else:
                 parts.append(tok.text)
         return " ".join(parts)
+
+
+class EventMarkupBlock:
+    def __init__(self, markups: List[EventMarkup]):
+        self.markups = markups
+
+    def __iter__(self):
+        return iter(self.markups)
+
+    def __len__(self):
+        return len(self.markups)
+
+    def __getitem__(self, idx):
+        return self.markups[idx]
+
+    def __str__(self) -> str:
+        parts: List[str] = []
+        for em in self.markups:
+            parts.append(str(em))
+        return " ".join(parts)
+
+    def __repr__(self) -> str:
+        parts: List[str] = []
+        for em in self.markups:
+            parts.append(em.__repr__())
+        return "\n".join(parts)
