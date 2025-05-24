@@ -1,5 +1,3 @@
-from icecream import icecream
-
 from preprocess.modules.markup.models import EventMarkup, EventType
 
 
@@ -56,12 +54,14 @@ class EventTypeClassifier:
             # 2.2) Отношения атрибуции и номинальных модификаторов
             if rel in cls.STATIC_RELS:
                 static_score += 1
-        # icecream.ic(dynamic_score, static_score, markup)
         # 3) Классификация по набранным баллам
-        if dynamic_score > 2 and static_score < 3:
+        required = 2
+        if len(markup.tokens) < 3:
+            required = 1
+        if dynamic_score > required >= static_score:
             return EventType.DYNAMIC
-        if static_score > 2 and dynamic_score < 3:
+        if static_score > required >= dynamic_score:
             return EventType.STATIC
-        if dynamic_score > 2 and static_score > 2:
+        if dynamic_score > required and static_score > required:
             return EventType.MIXED
         return EventType.UNKNOWN
